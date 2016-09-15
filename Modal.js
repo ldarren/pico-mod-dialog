@@ -7,8 +7,8 @@ showPage=function(self,curr,pages){
         rightBtn=pages[curr+1]?{icon:'icon_next'}:{icon:'icon_ok'}
 
         self.signals.header(title,leftBtn,rightBtn).send(self.header)
-        self.signals.formShow(form).sendNow(self.form)
-    }).sendNow(self.sender)
+        self.signals.formShow(form).send(self.form)
+    }).send(self.sender)
 },
 closePage=function(self,curr,pages,verify,cb){
     self.signals.formCollect(verify,function(err,data){
@@ -27,13 +27,22 @@ return {
     signals:['layerShow','layerHide','formShow','formCollect','formUpdate','pageCreate','pageResult','pageChange','modalResult','header'],
     create: function(deps){
 		this.header=this.spawn(deps.Header)
-		this.form=this.spawn(deps.Form)
+		var
+		self=this,
+		sp=showPage,
+		pendingPages
+
+		showPage=function(s,c,pages){ pendingPages=pages }
+		this.form=this.spawn(deps.Form,null,null,false,function(){
+			showPage=sp
+			if (pendingPages) showPage(self,self.currentPage,pendingPages)
+		})
 		this.sender=null
 		this.pages=null
+		this.pendingPages=null
 		this.currentPage=0
 		this.data=null
     },
-
     slots:{
         modalShow:function(from, sender, pages){
 			this.sender=sender
@@ -51,7 +60,7 @@ return {
             var self=this
             this.signals.pageChange(name, value, function(name, value, options){
                 self.signals.formUpdate(name,value,options).send(self.form)
-            }).send()
+            }).send(self.sender)
         },
 		headerButtonClicked:function(from, sender, hash){
             var self=this
