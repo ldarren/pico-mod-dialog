@@ -1,6 +1,8 @@
 var
 picoObj=require('pico/obj'),
-showPage=function(self,curr,pages){
+showPage=function(self,curr){
+	var pages=self.pages
+	if (!pages || !pages.length) return
     self.signals.pageCreate(curr,pages.length,pages[curr],function(title,form){
         var
         leftBtn=curr?{icon:'icon_prev'}:{icon:'icon_ko'},
@@ -8,14 +10,24 @@ showPage=function(self,curr,pages){
 
         self.signals.header(title,leftBtn,rightBtn).send(self.header)
         self.signals.formShow(form).send(self.form)
+		self.currentPage=curr
     }).send(self.sender)
 },
-closePage=function(self,curr,pages,verify,cb){
+collectResult=function(self,verify,cb){
     self.signals.formCollect(verify,function(err,data){
         if(err) return cb(err)
         picoObj.extend(self.data,data)
-        self.signals.pageResult(self.data,cb).send(self.sender)
+        self.signals.pageResult(data,cb).send(self.sender)
     }).send(self.form)
+},
+changePage=function(self,next,verify){
+	var pages=self.pages
+	if (!pages || 0>next || (pages.length<=next)) return
+	verify=undefined===verify?self.currentPage<next:verify
+	collectResult(self,verify,function(err){
+		if (err) return console.error(err)
+		showPage(self,next)
+	})
 }
 
 return {
@@ -24,18 +36,21 @@ return {
 		Header:'view',
 		Form:'view'
 	},
-    signals:['layerShow','layerHide','formShow','formCollect','formUpdate','pageCreate','pageResult','pageChange','modalResult','header'],
+    signals:[
+		'layerShow','layerHide',
+		'formShow','formCollect','formUpdate',
+		'pageCreate','pageResult','pageItemChange',
+		'modalResult','header'],
     create: function(deps){
 		this.header=this.spawn(deps.Header)
 		var
 		self=this,
-		sp=showPage,
-		pendingPages
+		sp=showPage
 
-		showPage=function(s,c,pages){ pendingPages=pages }
+		showPage=function(s,c){ self.currentPage=c }
 		this.form=this.spawn(deps.Form,null,null,false,function(){
 			showPage=sp
-			if (pendingPages) showPage(self,self.currentPage,pendingPages)
+			if (self.pages) showPage(self,self.currentPage)
 		})
 		this.sender=null
 		this.pages=null
@@ -44,29 +59,34 @@ return {
 		this.data=null
     },
     slots:{
-        modalShow:function(from, sender, pages){
+        modalShow:function(from, sender, pages, page){
 			this.sender=sender
 			this.pages=pages
-			this.currentPage=0
 		    this.data={}
             this.signals.layerShow(1).send(this.host)
-            showPage(this,this.currentPage,pages)
+            showPage(this,undefined===page?0:page)
         },
         modalHide:function(from, sender){
 			this.sender=null
             this.signals.layerHide().send(this.host)
 		},
+		pageChange:function(from, sender, nextPage, verify){
+			changePage(this,nextPage,verify)
+		},
         formChange:function(from, sender, name, value){
             var self=this
-            this.signals.pageChange(name, value, function(name, value, options){
+            this.signals.pageItemChange(name, value, function(name, value, options){
                 self.signals.formUpdate(name,value,options).send(self.form)
             }).send(self.sender)
         },
+		collectPageResult:function(from, sender){
+			collectResult(this,true,function(){})
+		},
 		headerButtonClicked:function(from, sender, hash){
             var self=this
 			switch(hash){
 			case 'ok':
-                closePage(self,self.currentPage,self.pages,true,function(err){
+                collectResult(self,true,function(err){
                     if (err) return console.error(err)
 					self.signals.modalResult(self.data).send(self.sender)
 					self.signals.layerHide().send(self.host)
@@ -76,18 +96,10 @@ return {
 				this.signals.layerHide().send(this.host)
 				break	
 			case 'prev':
-                if (!self.currentPage) break
-                closePage(self,self.currentPage,self.pages,false,function(err){
-                    if (err) return console.error(err)
-                    showPage(self,--(self.currentPage),self.pages)
-                })
+				changePage(self,self.currentPage-1)
 				break	
 			case 'next':
-                if (self.pages.length===self.currentPage+1) break
-                closePage(self,self.currentPage,self.pages,true,function(err){
-                    if (err) return console.error(err)
-                    showPage(self,++(self.currentPage),self.pages)
-                })
+				changePage(self,self.currentPage+1)
 				break	
 			}
 		}
