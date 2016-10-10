@@ -17,7 +17,7 @@ collectResult=function(self,verify,cb){
     self.signals.formCollect(verify,function(err,data){
         if(err) return cb(err)
         picoObj.extend(self.data,data)
-        self.signals.modal_pageResult(data,cb).send(self.sender)
+        self.signals.modal_pageResult(self.currentPage,self.pages.length,data,cb).send(self.sender)
     }).send(self.form)
 },
 changePage=function(self,next,verify){
